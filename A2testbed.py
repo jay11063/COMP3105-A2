@@ -4,7 +4,7 @@
 #       You can use this script to visualize your models once you finish your code. 
 #       This script is not meant to be thorough (it does not call all your functions).
 #       We will use a different script to test your code. 
-import YourName.A2codes as A2codes
+import JaeyoonLee.A2codes as A2codes
 from A2helpers import plotModel, plotAdjModel, plotDualModel, polyKernel, generateData
 
 
