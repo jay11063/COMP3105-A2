@@ -196,7 +196,7 @@ def adjSqHinge(X, y, lamb, kernel_func):
         a = params[:n]
         a0 = params[n]
 
-        margin = y.flatten() * (X @ a + a0)
+        margin = y.flatten() * (K @ a + a0)
 
         loss = np.maximum(0, 1 - margin)**2
 
