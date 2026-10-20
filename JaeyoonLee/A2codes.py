@@ -421,7 +421,7 @@ def dualHinge(X, y, lamb, kernel_func, stabilizer=1e-5):
 
     # b = y_i - (1/lamb) K_i^T @ diag(y) @ a
     b = y[closest_idx] - (1.0 / lamb) * K[closest_idx, :] @ diag_y @ a
-    return a, float(b)
+    return a, b.item()
 
 
 # b) 
@@ -468,7 +468,7 @@ def cvMnist(dataset_folder, lamb_list, kernel_list, k=5):
         for j, kernel_func in enumerate(kernel_list):
             for l in range(k):
                 val_idx = fold_indices[l]
-                train_idx = np.delete(fold_indices, i, axis=0).flatten()
+                train_idx = np.concatenate([fold_indices[m] for m in range(k) if m != l])
 
                 Xtrain = X[train_idx, :] # TODO: obtain the training input
                 ytrain = y[train_idx, :] # TODO: obtain the corresponding training label
