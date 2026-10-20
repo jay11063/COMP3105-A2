@@ -217,15 +217,16 @@ def adjSqHinge(X, y, lamb, kernel_func):
 # b)
 def adjHinge(X, y, lamb, kernel_func, stabilizer=1e-5):
     """
-    a*,a0* = argmin_{w,w0} sum(max(0, 1-m_i)) + lambda/2 * a^T @ K @ a
+    a*,a0* = argmin_{a,a0} sum(max(0, 1-m_i)) + lambda/2 * a^T @ K @ a
     Args:
         X: (n, d)
         y: (n, 1)
         lamb: scalar
+        kernel_func: function(X,X) -> K
         stabilizer: scalar
     Returns:
-        w: (d, 1)
-        w0: scalar
+        a: (n, 1)
+        a0: scalar
     """
     n, d = X.shape
     K = kernel_func(X,X)
@@ -241,7 +242,7 @@ def adjHinge(X, y, lamb, kernel_func, stabilizer=1e-5):
                        ])
 
     # h = [h^(1) = 0_n
-    #      h^(2) = 1_n]
+    #      h^(2) = -1_n]
     # h : (2n, 1)
     h = np.concatenate([np.zeros((n,1)), -np.ones((n,1))])
 
@@ -274,6 +275,8 @@ def adjClassify(Xtest, a, a0, X, kernel_func):
         Xtest: (m, d)
         a    : (n, 1)
         a0   : scalar
+        X    : (n, d)
+        kernel_func: function(Xtest,X) -> K_test
     Returns:
         yhat : (m, 1)
     """
@@ -329,3 +332,140 @@ def synExperimentsKernel():
 
     # TODO: return 5-by-6 train accuracy and 5-by-6 test accuracy
     return train_acc, test_acc
+
+
+# Question 3 : Binary Classification (SVM Dual Form)
+
+# a)
+def dualHinge(X, y, lamb, kernel_func, stabilizer=1e-5):
+    """
+    a,b = argmax_{a} a^T @ 1_n - 1/(2*lambda) * a^T @ diag(y) @ X @ X^T @ diag(y) @ a
+    
+    cvxopt.solvers.qp: min (1/2)x^T @ P @ x + q^T @ x -> max -((1/2)x^T @ P @ x + q^T)
+        let x = alpha, then P = (1/lambda) * diag(y) @ X @ X^T @ diag(y) and q = -1_n
+             s.t. 0_n ⪯ alpha ⪯ 1_n, a^T @ y = 0
+
+    Args:
+        X: (n, d)
+        y: (n, 1)
+        lamb: scalar
+        kernel_func: function(X,X) -> K
+        stabilizer: scalar
+    Returns:
+        a: (n, 1)
+        b: scalar
+    """
+    n, d = X.shape
+    K = kernel_func(X,X)
+    diag_y = np.diag(y.flatten())
+
+    # q^T = -1_n
+    q = -np.ones((n, 1))
+
+
+    # G = [-I_n
+    #       I_n]
+    # G : (2n, n)
+    # 0_n ⪯ alpha ⪯ 1_n -> [-alpha ⪯ 0_n,
+    #                        alpha ⪯ 1_n]
+    G = np.concatenate([-np.eye(n), np.eye(n)])
+
+    # h = [0_n
+    #      1_n]
+    # h : (2n, 1)
+    h = np.concatenate([np.zeros((n,1)), np.ones((n,1))])
+
+    # P = (1/lambda) * diag(y) @ K @ diag(y)
+    # P : (2n+1, 2n+1)
+    P = (1.0 / lamb) * (diag_y @ K @ diag_y)
+    P = P + stabilizer * np.eye(n)
+
+    A = y.T.astype(float)
+    b = np.zeros(1)
+
+    solvers.options["show_progress"] = False
+
+    P = matrix(P)
+    q = matrix(q)
+    G = matrix(G)
+    h = matrix(h)
+    A = matrix(A)
+    b = matrix(b)
+
+    res = solvers.qp(P, q, G, h, A, b)
+    a = np.array(res['x'])
+    closest_idx = np.argmin(np.abs(a - 0.5))
+
+    # b = y_i - (1/lamb) K_i^T @ diag(y) @ a
+    b = y[closest_idx] - (1.0 / lamb) * K[closest_idx, :] @ diag_y @ a
+    return a, float(b)
+
+
+# b) 
+def dualClassify(Xtest, a, b, X, y, lamb, kernel_func):
+    """
+    yhat = sign((1/lambda)*kernel(x^T, X) @ diag(y) @ alpha + b)
+    Args:
+        Xtest: (m, d)
+        a    : (n, 1)
+        b   : scalar
+        X    : (n, d)
+        kernel_func: function(Xtest,X) -> K_test
+    Returns:
+        yhat : (m, 1)
+    """
+    K_test = kernel_func(Xtest, X)
+    yhat = np.sign((1.0/lamb) * K_test @ np.diag(y.flatten()) @ a + b)
+    yhat[yhat == 0] = 1.0
+    return yhat
+
+
+# c)
+def cvMnist(dataset_folder, lamb_list, kernel_list, k=5):
+
+    train_data = pd.read_csv(f"{dataset_folder}/A2train.csv", header=None).to_numpy()
+    X = train_data[:, 1:] / 255.
+    y = train_data[:, 0][:, None]
+    y[y == 4] = -1
+    y[y == 9] = 1
+
+    cv_acc = np.zeros([k, len(lamb_list), len(kernel_list)])
+
+    # TODO: Change the following random seed to your GROUP ID
+    #       (the XX in A2-XX on Brightspace)
+    np.random.seed(GROUP_ID)
+
+    # TODO: shuffle the indices and divide them using np.array_split
+    n,d = X.shape
+    shuffled_indices = np.arange(n)
+    np.random.shuffle(shuffled_indices)
+    fold_indices = np.array_split(shuffled_indices, k)
+
+    for i, lamb in enumerate(lamb_list):
+        for j, kernel_func in enumerate(kernel_list):
+            for l in range(k):
+                val_idx = fold_indices[i]
+                train_idx = np.delete(fold_indices, i, axis=0).flatten()
+
+                Xtrain = X[train_idx, :] # TODO: obtain the training input
+                ytrain = y[train_idx, :] # TODO: obtain the corresponding training label
+
+                Xval = X[val_idx, :] # TODO: obtain the validation input
+                yval = y[val_idx, :] # TODO: obtain the corresponding validation label
+
+                a, b = dualHinge(Xtrain, ytrain, lamb, kernel_func)
+                yhat = dualClassify(Xval, a, b, Xtrain, ytrain, lamb, kernel_func)
+
+                cv_acc[l, i, j] = np.mean(yhat == yval) # TODO: calculate validation accuracy
+
+    # TODO: compute the average accuracies over k folds
+    cv_acc = np.mean(cv_acc, axis=0)
+
+    # TODO: identify the best lamb and kernel function
+    best_row, best_col = np.unravel_index(np.argmax(cv_acc), cv_acc.shape)
+    best_lamb = lamb_list[best_row]
+    best_kernel = kernel_list[best_col]
+
+    # TODO: return a "len(lamb_list)-by-len(kernel_list)" accuracy variable,
+    #       the best lamb and the best kernel
+    return cv_acc, best_lamb, best_kernel

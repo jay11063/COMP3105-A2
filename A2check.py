@@ -48,7 +48,7 @@ import numpy as np
 # 설정 — 여기만 고치면 된다
 # ---------------------------------------------------------------------------
 STUDENT_FOLDER = "JaeyoonLee"   # A2codes.py 가 들어 있는 폴더 이름
-GROUP_ID = None                 # Brightspace 그룹 번호 (A2-XX 의 XX). 예: 17
+GROUP_ID = 105                 # Brightspace 그룹 번호 (A2-XX 의 XX). 예: 17
                                 # 정하면 시드가 이 값인지 검사한다
 
 # Windows 에서 출력을 파일로 돌리거나 cp949 콘솔일 때 ⪯, ‖ 같은 기호로 죽지 않게
