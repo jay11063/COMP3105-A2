@@ -184,6 +184,7 @@ def adjSqHinge(X, y, lamb, kernel_func):
     """
     n, d = X.shape
     K = kernel_func(X, X)
+    y_flat = y.flatten()
 
     def obj_func(params):
         """
@@ -196,7 +197,7 @@ def adjSqHinge(X, y, lamb, kernel_func):
         a = params[:n]
         a0 = params[n]
 
-        margin = y.flatten() * (K @ a + a0)
+        margin = y_flat * (K @ a + a0)
 
         loss = np.maximum(0, 1 - margin)**2
 
@@ -204,9 +205,31 @@ def adjSqHinge(X, y, lamb, kernel_func):
 
         return np.sum(loss) + reg
 
+    def grad_func_jac(params):
+        """
+        Derivation:
+        J = sum(max(0, 1-m_i)^2) + (lamb/2)*a^T*K*a, 
+            where m_i = y_i*(k_i^T*a + a0).
+        dJ/da = sum(-2*max(0, 1-m_i)*y_i*k_i) + lamb*K*a 
+              = K @ (d_vec + lamb*a)
+        dJ/da0 = sum(-2*max(0, 1-m_i)*y_i) 
+               = sum(d_vec), 
+               where d_vec_i = -2 * max(0, 1 - m_i) * y_i
+        """
+        a = params[:n]
+        a0 = params[n]
+        margin = y_flat * (K @ a + a0)
+
+        d_vec = -2.0 * np.maximum(0,1-margin) * y_flat
+
+        grad_a = K @ (d_vec + lamb * a)
+        grad_a0 = np.sum(d_vec)
+
+        return np.append(grad_a, grad_a0)
+
     init_params = np.zeros(n+1)
 
-    res = minimize(obj_func, init_params)
+    res = minimize(obj_func, init_params, jac=grad_func_jac)
     best_params = res.x
 
     alpha = best_params[:n].reshape(n,1)
