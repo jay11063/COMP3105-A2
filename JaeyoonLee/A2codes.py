@@ -467,7 +467,7 @@ def cvMnist(dataset_folder, lamb_list, kernel_list, k=5):
     for i, lamb in enumerate(lamb_list):
         for j, kernel_func in enumerate(kernel_list):
             for l in range(k):
-                val_idx = fold_indices[i]
+                val_idx = fold_indices[l]
                 train_idx = np.delete(fold_indices, i, axis=0).flatten()
 
                 Xtrain = X[train_idx, :] # TODO: obtain the training input
