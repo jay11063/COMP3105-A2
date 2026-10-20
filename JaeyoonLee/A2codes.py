@@ -48,9 +48,32 @@ def minSqHinge(X, y, lamb):
 
         return np.sum(loss) + reg
 
+    def grad_func(params):
+        """
+        Derivation:
+        J = sum(max(0, 1-m_i)^2) + (lamb/2)*w^T*w, 
+            where m_i = y_i*(x_i^T*w + w0).
+        dJ/dw = sum(-2*max(0, 1-m_i)*y_i*x_i) + lamb*w 
+              = X^T @ d_vec + lamb*w
+        dJ/dw0 = sum(-2*max(0, 1-m_i)*y_i) 
+               = sum(d_vec), 
+               where d_vec_i = -2 * max(0, 1 - m_i) * y_i
+        """
+        w_curr = params[:d].reshape(d, 1)
+        w0_curr = params[d]
+
+        margin = y * (X @ w_curr + w0_curr)
+
+        d_vec = -2.0 * np.maximum(0, 1 - margin) * y
+
+        grad_w = (X.T @ d_vec) + (lamb * w_curr)
+        grad_w0 = np.sum(d_vec)
+
+        return np.append(grad_w.flatten(), grad_w0)
+
     init_params = np.zeros(d+1)
 
-    res = minimize(obj_func, init_params)
+    res = minimize(obj_func, init_params, jac=grad_func)
     best_params = res.x
 
     w = best_params[:d].reshape(d,1)
@@ -384,7 +407,6 @@ def dualHinge(X, y, lamb, kernel_func, stabilizer=1e-5):
 
     # q^T = -1_n
     q = -np.ones((n, 1))
-
 
     # G = [-I_n
     #       I_n]

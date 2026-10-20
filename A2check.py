@@ -19,7 +19,9 @@
 #   python A2check.py q1           # Q1 함수만        (q2, q3, static 도 가능)
 #   python A2check.py q1 q2        # 여러 개 조합
 #   python A2check.py exp          # 실험 함수까지 (synExperiments*, cvMnist)
+#   python A2check.py exp repro    # + synExperimentsRegularize 를 한 번 더 돌려 시드 재현성 확인
 #                                  #   → 수 분 걸림. 표도 같이 출력해 준다
+#   python A2check.py cv           # cvMnist 만 (fold 분할 검사 포함, ~1분)
 #   python A2check.py all          # 전부
 #
 # 아직 구현 안 한 함수는 SKIP 으로 넘어가니, 한 단계 끝낼 때마다 돌리면 된다.
@@ -41,6 +43,7 @@ import subprocess
 import sys
 import time
 import traceback
+import warnings
 
 import numpy as np
 
@@ -114,6 +117,7 @@ class Report:
 
 
 R = Report()
+RUN_REPRO = False   # python A2check.py exp repro (또는 all) 일 때만 실험을 두 번 돌려 재현성 확인
 
 
 class NotImplementedYet(Exception):
@@ -126,7 +130,7 @@ def load_module():
         import importlib
         return importlib.import_module(f"{STUDENT_FOLDER}.A2codes")
     except Exception:
-        R.fail("A2codes import", "import 자체가 실패했다:\n" + traceback.format_exc(limit=3))
+        R.fail("A2codes import", "import 자체가 실패했다:\n" + traceback.format_exc(limit=-3))
         return None
 
 
@@ -139,17 +143,37 @@ def call(fn, *args, **kwargs):
     아직 구현 안 된 것처럼 보이면 NotImplementedYet."""
     buf = io.StringIO()
     t0 = time.time()
-    with contextlib.redirect_stdout(buf):
+    with contextlib.redirect_stdout(buf), warnings.catch_warnings(record=True) as wlist:
+        warnings.simplefilter("always")
         try:
             out = fn(*args, **kwargs)
         except NotImplementedError:
             raise NotImplementedYet()
     dt = time.time() - t0
+    report_warnings(fn, wlist)
     if out is None:
         raise NotImplementedYet()
     if isinstance(out, tuple) and any(o is None for o in out):
         raise NotImplementedYet()
     return out, buf.getvalue(), dt
+
+
+_SEEN_WARNINGS = set()
+
+
+def report_warnings(fn, wlist):
+    """A2codes.py 안에서 발생한 경고(특히 DeprecationWarning)를 알려준다.
+    numpy 1.25 에서는 경고만 뜨고 넘어가지만, 더 새로운 numpy 에서는 에러가 되는 코드가 있다.
+    (예: 원소가 1개인 1-D 배열을 float(...) 로 바꾸기 → numpy 2.x 에서 TypeError)"""
+    for w in wlist:
+        if os.path.abspath(w.filename) != os.path.abspath(CODE_PATH):
+            continue  # scipy / cvxopt 내부 경고는 무시
+        key = (w.lineno, str(w.message))
+        if key in _SEEN_WARNINGS:
+            continue
+        _SEEN_WARNINGS.add(key)
+        R.warn(f"{fn.__name__}: A2codes.py line {w.lineno} 에서 {w.category.__name__}",
+               f"{w.message}\n지금 환경에서는 동작하지만 라이브러리 버전이 바뀌면 에러가 될 수 있다.")
 
 
 def is_scalar(v):
@@ -400,7 +424,7 @@ def q1_checks(mod):
         except NotImplementedYet:
             R.skip("classify", "미구현")
         except Exception:
-            R.fail("classify", "에러:\n" + traceback.format_exc(limit=2))
+            R.fail("classify", "에러:\n" + traceback.format_exc(limit=-2))
 
     # ---------------- Q1(a) minSqHinge ----------------
     fn = get_fn(mod, "minSqHinge")
@@ -449,7 +473,7 @@ def q1_checks(mod):
         except NotImplementedYet:
             R.skip("minSqHinge", "미구현")
         except Exception:
-            R.fail("minSqHinge", "에러:\n" + traceback.format_exc(limit=3))
+            R.fail("minSqHinge", "에러:\n" + traceback.format_exc(limit=-3))
 
     # ---------------- Q1(b) minHinge ----------------
     fn = get_fn(mod, "minHinge")
@@ -487,7 +511,7 @@ def q1_checks(mod):
         except NotImplementedYet:
             R.skip("minHinge", "미구현")
         except Exception:
-            tb = traceback.format_exc(limit=3)
+            tb = traceback.format_exc(limit=-3)
             hint = ""
             if "'d' matrix" in tb or "must be a 'd'" in tb:
                 hint = "\n→ cvxopt 에 int 배열이 들어갔다. gen3 의 y 는 정수다: matrix(arr.astype(float))"
@@ -528,7 +552,7 @@ def q2_checks(mod, q1):
         except NotImplementedYet:
             R.skip("adjClassify", "미구현")
         except Exception:
-            R.fail("adjClassify", "에러:\n" + traceback.format_exc(limit=2))
+            R.fail("adjClassify", "에러:\n" + traceback.format_exc(limit=-2))
 
     # ---------------- Q2(a) adjSqHinge ----------------
     fn = get_fn(mod, "adjSqHinge")
@@ -572,7 +596,7 @@ def q2_checks(mod, q1):
         except NotImplementedYet:
             R.skip("adjSqHinge", "미구현")
         except Exception:
-            R.fail("adjSqHinge", "에러:\n" + traceback.format_exc(limit=3))
+            R.fail("adjSqHinge", "에러:\n" + traceback.format_exc(limit=-3))
 
     # ---------------- Q2(b) adjHinge ----------------
     fn = get_fn(mod, "adjHinge")
@@ -612,7 +636,7 @@ def q2_checks(mod, q1):
         except NotImplementedYet:
             R.skip("adjHinge", "미구현")
         except Exception:
-            R.fail("adjHinge", "에러:\n" + traceback.format_exc(limit=3))
+            R.fail("adjHinge", "에러:\n" + traceback.format_exc(limit=-3))
 
     return res
 
@@ -691,7 +715,7 @@ def q3_checks(mod, q1, q2):
         except NotImplementedYet:
             R.skip("dualHinge", "미구현")
         except Exception:
-            tb = traceback.format_exc(limit=3)
+            tb = traceback.format_exc(limit=-3)
             hint = ""
             if "Rank(A)" in tb:
                 hint = "\n→ A 의 shape 이 (1,n) 인지, stabilizer 를 더했는지 확인"
@@ -737,7 +761,7 @@ def q3_checks(mod, q1, q2):
         except NotImplementedYet:
             R.skip("dualClassify", "미구현")
         except Exception:
-            R.fail("dualClassify", "에러:\n" + traceback.format_exc(limit=2))
+            R.fail("dualClassify", "에러:\n" + traceback.format_exc(limit=-2))
 
     return res
 
@@ -749,6 +773,73 @@ def fmt_table(M, rows, title):
     head = f"{'':>14}" + "".join(f"{c:>9}" for c in ["SqH-M1", "SqH-M2", "SqH-M3", "H-M1", "H-M2", "H-M3"])
     lines = [title, head] + [f"{r:>14}" + "".join(f"{v:9.4f}" for v in row) for r, row in zip(rows, M)]
     return "\n".join(lines)
+
+
+def _row_keys(X):
+    """행 하나하나를 바이트 문자열로 — 어떤 이미지가 어느 쪽에 들어갔는지 추적용."""
+    X = np.ascontiguousarray(np.asarray(X, dtype=float))
+    return [r.tobytes() for r in X]
+
+
+def _spy_dual_classify(mod):
+    """cvMnist 가 dualClassify(Xval, a, b, Xtrain, ...) 를 부를 때
+    학습/검증 데이터로 무엇을 넘기는지 기록한다. (네 함수 동작은 그대로)"""
+    log = []
+    orig = mod.dualClassify
+
+    def spy(Xtest, a, b, X, y, lamb, kernel_func):
+        log.append((_row_keys(X), _row_keys(Xtest)))
+        return orig(Xtest, a, b, X, y, lamb, kernel_func)
+
+    mod.dualClassify = spy
+    return log, (lambda: setattr(mod, "dualClassify", orig))
+
+
+def _check_folds(log, n_combos, k):
+    """k-fold 교차검증의 기본 성질 검사:
+    (1) 각 fold 에서 학습 데이터와 검증 데이터가 겹치지 않는다
+    (2) 학습 + 검증 = 전체 데이터
+    (3) 한 (λ, 커널) 조합의 k 개 검증 fold 를 합치면 전체 데이터가 정확히 한 번씩
+    (4) 모든 조합이 같은 fold 분할을 쓴다 (셔플은 루프 밖에서 한 번)"""
+    import pandas as pd
+    from collections import Counter
+    if len(log) != n_combos * k:
+        R.warn("cvMnist: fold 검사", f"dualClassify 호출이 {len(log)}번 (기대 {n_combos * k}번) — fold 구조 검사 생략")
+        return
+    data = pd.read_csv(os.path.join(HERE, "A2train.csv"), header=None).to_numpy()
+    full = Counter(_row_keys(data[:, 1:] / 255.))
+    n = sum(full.values())
+    dup = {key for key, c in full.items() if c > 1}  # 데이터 안의 중복 이미지는 겹침 검사에서 제외
+
+    overlap_calls, size_bad = [], []
+    for t, (tr, va) in enumerate(log):
+        inter = (set(tr) & set(va)) - dup
+        if inter:
+            overlap_calls.append((t, len(inter)))
+        if len(tr) + len(va) != n:
+            size_bad.append((t, len(tr), len(va)))
+    R.check(not overlap_calls, "cvMnist: 학습/검증 데이터가 겹치지 않음",
+            f"{len(overlap_calls)}/{len(log)} 개 fold 에서 검증 이미지가 학습 데이터에도 들어 있다 "
+            f"(예: {overlap_calls[0][1] if overlap_calls else 0}장).\n"
+            "검증 fold 를 고르는 인덱스와 학습 fold 를 고르는 인덱스가 같은 변수(fold 번호)를 쓰는지 확인.\n"
+            "겹치면 검증 정확도가 실제보다 높게 나온다 (data leakage).")
+    R.check(not size_bad, "cvMnist: 학습 + 검증 = 전체 데이터",
+            f"예: fold #{size_bad[0][0]} 학습 {size_bad[0][1]} + 검증 {size_bad[0][2]} ≠ {n}" if size_bad else "")
+
+    cover_bad, val_sets = 0, []
+    for c in range(n_combos):
+        group = log[c * k:(c + 1) * k]
+        merged = Counter()
+        for _, va in group:
+            merged.update(va)
+        if merged != full:
+            cover_bad += 1
+        val_sets.append([frozenset(va) for _, va in group])
+    R.check(cover_bad == 0, "cvMnist: k 개 검증 fold 가 전체 데이터를 정확히 한 번씩 덮음",
+            f"{cover_bad}/{n_combos} 개 조합에서 검증 fold 들을 합쳐도 전체 데이터와 다르다.")
+    R.check(all(v == val_sets[0] for v in val_sets), "cvMnist: 모든 (λ, 커널) 조합이 같은 fold 분할 사용",
+            "조합마다 fold 가 다르다 → 셔플을 루프 안에서 하고 있는지 확인 (공정한 비교가 안 됨).",
+            level="WARN")
 
 
 def exp_checks(mod):
@@ -773,18 +864,22 @@ def exp_checks(mod):
                 R.check(dt < 60, "synExperimentsRegularize: 실행 시간", f"{dt:.0f}s — 명세는 약 20초. 벡터화/jac 확인.",
                         ok_msg=f"{dt:.1f}s", level="WARN")
                 check_printed("synExperimentsRegularize", pr)
-                # 시드가 함수 안에서 설정되는지 → 두 번 돌려 같은지
-                (tr2, _), _, _ = call(fn)
-                R.check(np.allclose(tr, tr2), "synExperimentsRegularize: 재현성 (두 번 실행 결과 동일)",
-                        "결과가 실행마다 다르다 → np.random.seed 가 함수 안 맨 앞에 있는지 확인.")
                 lam = ["λ=0.001", "λ=0.01", "λ=0.1", "λ=1.0"]
                 print("\n" + fmt_table(tr, lam, "  [Table 1] Training accuracy"))
                 print(fmt_table(te, lam, "  [Table 2] Test accuracy") + "\n")
+                # 시드가 함수 안에서 설정되는지 → 두 번 돌려 같은지 (한 번 더 돌리므로 시간이 두 배)
+                if RUN_REPRO:
+                    print(f"  ... 재현성 확인을 위해 한 번 더 실행 (약 {dt:.0f}초)")
+                    (tr2, _), _, _ = call(fn)
+                    R.check(np.allclose(tr, tr2), "synExperimentsRegularize: 재현성 (두 번 실행 결과 동일)",
+                            "결과가 실행마다 다르다 → np.random.seed 가 함수 안 맨 앞에 있는지 확인.")
+                else:
+                    R.skip("synExperimentsRegularize: 재현성", "시간 절약을 위해 생략. 확인하려면 python A2check.py exp repro")
                 reg = (tr, te)
         except NotImplementedYet:
             R.skip("synExperimentsRegularize", "미구현 (TODO 가 남아 있음)")
         except Exception:
-            R.fail("synExperimentsRegularize", "에러:\n" + traceback.format_exc(limit=3))
+            R.fail("synExperimentsRegularize", "에러:\n" + traceback.format_exc(limit=-3))
 
     fn = get_fn(mod, "synExperimentsKernel")
     if fn is None:
@@ -813,8 +908,13 @@ def exp_checks(mod):
         except NotImplementedYet:
             R.skip("synExperimentsKernel", "미구현 (TODO 가 남아 있음)")
         except Exception:
-            R.fail("synExperimentsKernel", "에러:\n" + traceback.format_exc(limit=3))
+            R.fail("synExperimentsKernel", "에러:\n" + traceback.format_exc(limit=-3))
 
+    cv_checks(mod)
+
+
+def cv_checks(mod):
+    """cvMnist 만 검사 (python A2check.py cv)."""
     fn = get_fn(mod, "cvMnist")
     if fn is None:
         R.skip("cvMnist", "아직 없음")
@@ -826,7 +926,12 @@ def exp_checks(mod):
                            lambda X1, X2: polyKernel(X1, X2, 2),
                            lambda X1, X2: gaussKernel(X1, X2, 1.0)]
             print("  ... cvMnist 실행 중 (2 λ × 3 커널 × 5 fold, 명세 기준 ~30초)")
-            (cv, bl, bk), pr, dt = call(fn, HERE, lamb_list, kernel_list)
+            spy_log, restore = _spy_dual_classify(mod)
+            try:
+                (cv, bl, bk), pr, dt = call(fn, HERE, lamb_list, kernel_list)
+            finally:
+                restore()
+            _check_folds(spy_log, n_combos=len(lamb_list) * len(kernel_list), k=5)
             ok = R.check(np.shape(cv) == (2, 3), "cvMnist: cv_acc shape (len(lamb_list), len(kernel_list))",
                          f"shape {np.shape(cv)} — k 축(axis=0) 평균을 했는지 확인.")
             if ok:
@@ -846,17 +951,35 @@ def exp_checks(mod):
                 check_printed("cvMnist", pr)
                 R.info("cvMnist 결과 (기능 검사용 임의 후보)",
                        "행 λ=" + str(lamb_list) + ", 열 [linear, poly2, gauss(1.0)]\n" + np.array2string(cv, precision=4))
+
+            # 5 로 나누어떨어지지 않는 k 에서도 동작하는지 (fold 크기가 서로 다를 때)
+            try:
+                (cv3, _, _), _, _ = call(fn, HERE, [1.0], [linearKernel], 3)
+                R.check(np.shape(cv3) == (1, 1), "cvMnist: k=3 (fold 크기가 다를 때) 처리",
+                        f"shape {np.shape(cv3)}", level="WARN")
+            except NotImplementedYet:
+                pass
+            except Exception:
+                R.warn("cvMnist: k=3 (fold 크기가 다를 때) 처리",
+                       "1000 을 3 으로 나누면 fold 크기가 334/333/333 으로 달라진다. 이때 에러가 난다:\n"
+                       + traceback.format_exc(limit=-1).strip().splitlines()[-1]
+                       + "\n크기가 다른 fold 들을 한 배열로 합치거나 지우는 방식인지 확인.")
         except NotImplementedYet:
             R.skip("cvMnist", "미구현 (TODO 가 남아 있음)")
         except FileNotFoundError:
             R.fail("cvMnist", f"A2train.csv 를 못 찾았다. dataset_folder={HERE} 로 불렀다. 경로 조립 확인.")
         except Exception:
-            R.fail("cvMnist", "에러:\n" + traceback.format_exc(limit=3))
+            R.fail("cvMnist", "에러:\n" + traceback.format_exc(limit=-3))
 
 
 # =============================================================================
 def main():
+    global RUN_REPRO
     args = {a.lower() for a in sys.argv[1:]}
+    RUN_REPRO = bool(args & {"repro", "all"})
+    args.discard("repro")
+    if not args and RUN_REPRO:
+        args = {"exp"}
     if not args:
         args = {"static", "q1", "q2", "q3"}
     if "all" in args:
@@ -881,6 +1004,9 @@ def main():
         q3_checks(mod, q1, q2)
     if "exp" in args:
         exp_checks(mod)
+    elif "cv" in args:
+        R.section("cvMnist")
+        cv_checks(mod)
     R.summary()
 
 
