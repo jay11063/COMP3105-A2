@@ -108,6 +108,8 @@ class Report:
         c = self.counts
         print("\n" + "-" * 72)
         print(f"PASS {c['PASS']}   FAIL {c['FAIL']}   WARN {c['WARN']}   SKIP {c['SKIP']}")
+        if c["SKIP"]:
+            print("※ SKIP 은 '통과' 가 아니라 '아직 검사 못 함' 이다 (함수가 없거나 None 을 반환).")
         print("-" * 72)
 
 
@@ -457,9 +459,7 @@ def q1_checks(mod):
         try:
             ok_all = True
             for gm, lamb in [(1, 1.0), (2, 0.1), (3, 0.01)]:
-                X, y = data(gm)
-                if gm == 3:
-                    R.info("minHinge gen3", f"y dtype = {y.dtype} (정수 라벨 → cvxopt 에 float 로 넘겨야 함)")
+                X, y = data(gm)   # gen3 의 y 는 정수(int) 배열 — cvxopt 에러가 나면 except 에서 힌트
                 (w, w0), pr, dt = call(fn, X, y, lamb)
                 tag = f"minHinge gen{gm} λ={lamb}"
                 if not R.check(isinstance(w, np.ndarray) and w.shape == (2, 1), f"{tag}: w shape (d,1)",
